@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Finance Tracker</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>Finance</h1>
+            <div class="header-balance" id="totalBalance">0.00 BYN</div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav">
+            <button class="nav-btn active" data-page="home">
+                <span class="nav-icon">🏠</span>
+                <span>Главная</span>
+            </button>
+            <button class="nav-btn" data-page="add">
+                <span class="nav-icon">➕</span>
+                <span>Добавить</span>
+            </button>
+            <button class="nav-btn" data-page="transfer">
+                <span class="nav-icon">🔄</span>
+                <span>Перевод</span>
+            </button>
+            <button class="nav-btn" data-page="stats">
+                <span class="nav-icon">📊</span>
+                <span>Аналитика</span>
+            </button>
+            <button class="nav-btn" data-page="settings">
+                <span class="nav-icon">⚙️</span>
+                <span>Настройки</span>
+            </button>
+        </nav>
+
+        <!-- Pages Container -->
+        <main class="pages">
+            <!-- Home Page -->
+            <section class="page active" id="page-home">
+                <!-- Accounts Cards -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Счета</h2>
+                    </div>
+                    <div class="accounts-scroll" id="accountsList"></div>
+                </div>
+
+                <!-- Recent Transactions -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Последние операции</h2>
+                    </div>
+                    <div class="transactions-list" id="transactionsList"></div>
+                </div>
+            </section>
+
+            <!-- Add Transaction Page -->
+            <section class="page" id="page-add">
+                <div class="segment-control">
+                    <button class="segment active" data-type="expense">Расход</button>
+                    <button class="segment" data-type="income">Доход</button>
+                </div>
+
+                <div class="form-card">
+                    <input type="hidden" id="editTransactionId" value="">
+                    
+                    <div class="input-group">
+                        <label>Сумма</label>
+                        <input type="number" id="amount" placeholder="0.00" inputmode="decimal">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Категория</label>
+                        <div class="categories-grid" id="categoriesGrid"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Счёт</label>
+                        <div class="accounts-grid" id="accountsGrid"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Описание</label>
+                        <input type="text" id="description" placeholder="Опционально">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Дата</label>
+                        <input type="date" id="transactionDate">
+                    </div>
+
+                    <button class="btn-primary" id="saveTransaction">Сохранить</button>
+                    <button class="btn-secondary btn-cancel" id="cancelEdit" style="display: none;">Отменить редактирование</button>
+                </div>
+            </section>
+
+            <!-- Transfer Page -->
+            <section class="page" id="page-transfer">
+                <div class="form-card">
+                    <h2 class="form-title">Перевод между счетами</h2>
+                    
+                    <div class="input-group">
+                        <label>Со счёта</label>
+                        <div class="accounts-grid" id="fromAccountGrid"></div>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>На счёт</label>
+                        <div class="accounts-grid" id="toAccountGrid"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Сумма списания</label>
+                        <input type="number" id="transferAmount" placeholder="0.00" inputmode="decimal">
+                    </div>
+                    
+                    <div class="input-group" id="convertedAmountGroup" style="display: none;">
+                        <label>Сумма зачисления</label>
+                        <input type="number" id="convertedAmount" placeholder="0.00" inputmode="decimal">
+                        <small class="hint" id="conversionHint"></small>
+                    </div>
+
+                    <button class="btn-primary" id="saveTransfer">Перевести</button>
+                </div>
+
+                <!-- Transfer History -->
+                <div class="section" style="margin-top: 20px;">
+                    <div class="section-header">
+                        <h2>История переводов</h2>
+                    </div>
+                    <div class="transactions-list" id="transfersList"></div>
+                </div>
+            </section>
+
+            <!-- Stats Page -->
+            <section class="page" id="page-stats">
+                <div class="month-selector">
+                    <button class="month-nav" id="prevMonth">‹</button>
+                    <span id="currentMonth">Декабрь 2024</span>
+                    <button class="month-nav" id="nextMonth">›</button>
+                </div>
+
+                <div class="stats-cards">
+                    <div class="stat-card income">
+                        <span class="stat-label">Доходы</span>
+                        <span class="stat-value" id="totalIncome">0 BYN</span>
+                    </div>
+                    <div class="stat-card expense">
+                        <span class="stat-label">Расходы</span>
+                        <span class="stat-value" id="totalExpense">0 BYN</span>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Расходы по категориям</h3>
+                    <canvas id="categoryChart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>По дням</h3>
+                    <canvas id="dailyChart"></canvas>
+                </div>
+
+                <div class="section">
+                    <h3>Лимиты</h3>
+                    <div class="limits-list" id="limitsList"></div>
+                </div>
+
+                <button class="btn-secondary" id="exportData">📊 Экспорт в Excel</button>
+            </section>
+
+            <!-- Settings Page -->
+            <section class="page" id="page-settings">
+                <!-- Categories Management -->
+                <div class="settings-section">
+                    <h2>Категории</h2>
+                    
+                    <div class="subsection">
+                        <h3>Расходы</h3>
+                        <div class="settings-list" id="expenseCategoriesList"></div>
+                        <button class="btn-secondary" id="addExpenseCategory">+ Добавить категорию</button>
+                    </div>
+
+                    <div class="subsection">
+                        <h3>Доходы</h3>
+                        <div class="settings-list" id="incomeCategoriesList"></div>
+                        <button class="btn-secondary" id="addIncomeCategory">+ Добавить категорию</button>
+                    </div>
+                </div>
+
+                <!-- Accounts Management -->
+                <div class="settings-section">
+                    <h2>Счета</h2>
+                    <div class="settings-list" id="settingsAccountsList"></div>
+                    <button class="btn-secondary" id="addAccount">+ Добавить счёт</button>
+                </div>
+
+                <!-- Exchange Rates -->
+                <div class="settings-section">
+                    <h2>Курсы валют</h2>
+                    <div class="rates-list" id="ratesList"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modalTitle">Заголовок</h3>
+                <button class="modal-close" id="modalClose">✕</button>
+            </div>
+            <div class="modal-content" id="modalContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
