@@ -6,7 +6,6 @@ import os
 DB_FOLDER = "databases"
 
 def get_db_path(user_id: int) -> str:
-    """Каждый пользователь = отдельная база"""
     if not os.path.exists(DB_FOLDER):
         os.makedirs(DB_FOLDER)
     return os.path.join(DB_FOLDER, f"user_{user_id}.db")
@@ -20,7 +19,6 @@ def init_db(user_id: int):
     conn = get_connection(user_id)
     cursor = conn.cursor()
     
-    # Таблица счетов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +28,6 @@ def init_db(user_id: int):
         )
     ''')
     
-    # Таблица балансов (мультивалютность)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS account_balances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +39,6 @@ def init_db(user_id: int):
         )
     ''')
     
-    # Таблица категорий
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +51,6 @@ def init_db(user_id: int):
         )
     ''')
     
-    # Таблица транзакций
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,23 +66,19 @@ def init_db(user_id: int):
         )
     ''')
     
-    # Таблица переводов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transfers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             from_account_id INTEGER NOT NULL,
             to_account_id INTEGER NOT NULL,
             amount REAL NOT NULL,
-            from_currency TEXT NOT NULL,
-            to_currency TEXT NOT NULL,
-            converted_amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'BYN',
             date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (from_account_id) REFERENCES accounts(id),
             FOREIGN KEY (to_account_id) REFERENCES accounts(id)
         )
     ''')
     
-    # Таблица целей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +90,6 @@ def init_db(user_id: int):
         )
     ''')
     
-    # Таблица уведомлений (чтобы не спамить)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS limit_notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +104,6 @@ def init_db(user_id: int):
     
     conn.commit()
     
-    # Проверяем, есть ли начальные данные
     cursor.execute("SELECT COUNT(*) FROM categories")
     if cursor.fetchone()[0] == 0:
         init_default_data(conn)
@@ -124,7 +113,6 @@ def init_db(user_id: int):
 def init_default_data(conn):
     cursor = conn.cursor()
     
-    # Стандартные категории расходов
     expense_categories = [
         ('Еда', 'expense', '🍔', '#FF9500'),
         ('Транспорт', 'expense', '🚗', '#FF3B30'),
@@ -137,10 +125,9 @@ def init_default_data(conn):
         ('Другое', 'expense', '📦', '#8E8E93'),
     ]
     
-    # Стандартные категории доходов
     income_categories = [
         ('Зарплата', 'income', '💰', '#34C759'),
-        ('Стипендия', 'income', '🎓', '#007AFF'),
+        ('Подработка', 'income', '💵', '#007AFF'),
         ('Подарок', 'income', '🎁', '#FF9500'),
         ('Другое', 'income', '📥', '#8E8E93'),
     ]
@@ -151,19 +138,14 @@ def init_default_data(conn):
             (name, type_, icon, color)
         )
     
-    # Стандартные счета
     default_accounts = [
         ('Основная карта', '💳'),
         ('Наличные', '💵'),
     ]
     
     for name, icon in default_accounts:
-        cursor.execute(
-            "INSERT INTO accounts (name, icon) VALUES (?, ?)",
-            (name, icon)
-        )
+        cursor.execute("INSERT INTO accounts (name, icon) VALUES (?, ?)", (name, icon))
         account_id = cursor.lastrowid
-        # Добавляем нулевой баланс в BYN
         cursor.execute(
             "INSERT INTO account_balances (account_id, currency, balance) VALUES (?, 'BYN', 0)",
             (account_id,)
@@ -171,18 +153,16 @@ def init_default_data(conn):
     
     conn.commit()
 
-# ============ CRUD операции ============
+# ============ Счета ============
 
-# --- Счета ---
 def get_accounts(user_id: int):
     conn = get_connection(user_id)
     accounts = conn.execute("SELECT * FROM accounts ORDER BY created_at").fetchall()
     result = []
     for acc in accounts:
         acc_dict = dict(acc)
-        # Получаем все балансы для счёта
         balances = conn.execute(
-            "SELECT currency, balance FROM account_balances WHERE account_id = ? ORDER BY currency",
+            "SELECT currency, balance FROM account_balances WHERE account_id = ?",
             (acc['id'],)
         ).fetchall()
         acc_dict['balances'] = {b['currency']: b['balance'] for b in balances}
@@ -207,12 +187,8 @@ def get_account(user_id: int, id: int):
 
 def add_account(user_id: int, name: str, icon: str = '💳'):
     conn = get_connection(user_id)
-    cursor = conn.execute(
-        "INSERT INTO accounts (name, icon) VALUES (?, ?)",
-        (name, icon)
-    )
+    cursor = conn.execute("INSERT INTO accounts (name, icon) VALUES (?, ?)", (name, icon))
     account_id = cursor.lastrowid
-    # Добавляем нулевой баланс в BYN по умолчанию
     conn.execute(
         "INSERT INTO account_balances (account_id, currency, balance) VALUES (?, 'BYN', 0)",
         (account_id,)
@@ -223,10 +199,7 @@ def add_account(user_id: int, name: str, icon: str = '💳'):
 
 def update_account(user_id: int, id: int, name: str, icon: str):
     conn = get_connection(user_id)
-    conn.execute(
-        "UPDATE accounts SET name=?, icon=? WHERE id=?",
-        (name, icon, id)
-    )
+    conn.execute("UPDATE accounts SET name=?, icon=? WHERE id=?", (name, icon, id))
     conn.commit()
     conn.close()
 
@@ -240,10 +213,7 @@ def delete_account(user_id: int, id: int):
     conn.close()
 
 def update_account_balance(user_id: int, account_id: int, currency: str, amount: float, operation: str = 'add'):
-    """Обновить баланс счёта в определённой валюте"""
     conn = get_connection(user_id)
-    
-    # Проверяем, есть ли уже эта валюта на счёте
     existing = conn.execute(
         "SELECT balance FROM account_balances WHERE account_id = ? AND currency = ?",
         (account_id, currency)
@@ -255,23 +225,22 @@ def update_account_balance(user_id: int, account_id: int, currency: str, amount:
                 "UPDATE account_balances SET balance = balance + ? WHERE account_id = ? AND currency = ?",
                 (amount, account_id, currency)
             )
-        else:  # subtract
+        else:
             conn.execute(
                 "UPDATE account_balances SET balance = balance - ? WHERE account_id = ? AND currency = ?",
                 (amount, account_id, currency)
             )
     else:
-        # Создаём новую запись для валюты
+        balance = amount if operation == 'add' else -amount
         conn.execute(
             "INSERT INTO account_balances (account_id, currency, balance) VALUES (?, ?, ?)",
-            (account_id, currency, amount if operation == 'add' else -amount)
+            (account_id, currency, balance)
         )
     
     conn.commit()
     conn.close()
 
 def get_account_balance(user_id: int, account_id: int, currency: str) -> float:
-    """Получить баланс счёта в определённой валюте"""
     conn = get_connection(user_id)
     result = conn.execute(
         "SELECT balance FROM account_balances WHERE account_id = ? AND currency = ?",
@@ -280,7 +249,8 @@ def get_account_balance(user_id: int, account_id: int, currency: str) -> float:
     conn.close()
     return result['balance'] if result else 0
 
-# --- Категории ---
+# ============ Категории ============
+
 def get_categories(user_id: int, type_filter: Optional[str] = None):
     conn = get_connection(user_id)
     if type_filter:
@@ -326,7 +296,8 @@ def delete_category(user_id: int, id: int):
     conn.commit()
     conn.close()
 
-# --- Транзакции ---
+# ============ Транзакции ============
+
 def get_transactions(user_id: int, limit: int = 50, offset: int = 0, month: str = None):
     conn = get_connection(user_id)
     query = '''
@@ -363,15 +334,12 @@ def get_transaction(user_id: int, id: int):
     return dict(t) if t else None
 
 def add_transaction(user_id: int, amount: float, currency: str, type_: str, category_id: int, account_id: int, description: str = '', date: str = None):
-    conn = get_connection(user_id)
-    
-    # Проверка баланса для расходов
     if type_ == 'expense':
         balance = get_account_balance(user_id, account_id, currency)
         if balance < amount:
-            conn.close()
             return None, "insufficient_funds"
     
+    conn = get_connection(user_id)
     if date is None:
         date = datetime.now().isoformat()
     
@@ -379,12 +347,10 @@ def add_transaction(user_id: int, amount: float, currency: str, type_: str, cate
         "INSERT INTO transactions (amount, currency, type, category_id, account_id, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (amount, currency, type_, category_id, account_id, description, date)
     )
-    
     conn.commit()
     transaction_id = cursor.lastrowid
     conn.close()
     
-    # Обновляем баланс счёта
     if type_ == 'expense':
         update_account_balance(user_id, account_id, currency, amount, 'subtract')
     else:
@@ -394,24 +360,19 @@ def add_transaction(user_id: int, amount: float, currency: str, type_: str, cate
 
 def update_transaction(user_id: int, id: int, amount: float, currency: str, type_: str, category_id: int, account_id: int, description: str = '', date: str = None):
     conn = get_connection(user_id)
-    
-    # Получаем старую транзакцию
     old_t = conn.execute("SELECT * FROM transactions WHERE id=?", (id,)).fetchone()
     if not old_t:
         conn.close()
         return None, "not_found"
     
-    # Восстанавливаем старый баланс
     if old_t['type'] == 'expense':
         update_account_balance(user_id, old_t['account_id'], old_t['currency'], old_t['amount'], 'add')
     else:
         update_account_balance(user_id, old_t['account_id'], old_t['currency'], old_t['amount'], 'subtract')
     
-    # Проверяем новый баланс для расходов
     if type_ == 'expense':
         balance = get_account_balance(user_id, account_id, currency)
         if balance < amount:
-            # Откатываем
             if old_t['type'] == 'expense':
                 update_account_balance(user_id, old_t['account_id'], old_t['currency'], old_t['amount'], 'subtract')
             else:
@@ -419,7 +380,6 @@ def update_transaction(user_id: int, id: int, amount: float, currency: str, type
             conn.close()
             return None, "insufficient_funds"
     
-    # Обновляем транзакцию
     conn.execute(
         "UPDATE transactions SET amount=?, currency=?, type=?, category_id=?, account_id=?, description=?, date=? WHERE id=?",
         (amount, currency, type_, category_id, account_id, description, date, id)
@@ -427,7 +387,6 @@ def update_transaction(user_id: int, id: int, amount: float, currency: str, type
     conn.commit()
     conn.close()
     
-    # Применяем новый баланс
     if type_ == 'expense':
         update_account_balance(user_id, account_id, currency, amount, 'subtract')
     else:
@@ -439,7 +398,6 @@ def delete_transaction(user_id: int, id: int):
     conn = get_connection(user_id)
     t = conn.execute("SELECT * FROM transactions WHERE id=?", (id,)).fetchone()
     if t:
-        # Восстанавливаем баланс
         if t['type'] == 'expense':
             update_account_balance(user_id, t['account_id'], t['currency'], t['amount'], 'add')
         else:
@@ -448,7 +406,8 @@ def delete_transaction(user_id: int, id: int):
         conn.commit()
     conn.close()
 
-# --- Переводы ---
+# ============ Переводы ============
+
 def get_transfers(user_id: int, limit: int = 50):
     conn = get_connection(user_id)
     transfers = conn.execute('''
@@ -464,24 +423,22 @@ def get_transfers(user_id: int, limit: int = 50):
     conn.close()
     return [dict(t) for t in transfers]
 
-def add_transfer(user_id: int, from_account_id: int, to_account_id: int, amount: float, from_currency: str, to_currency: str, converted_amount: float):
-    # Проверяем баланс
-    balance = get_account_balance(user_id, from_account_id, from_currency)
+def add_transfer(user_id: int, from_account_id: int, to_account_id: int, amount: float, currency: str):
+    balance = get_account_balance(user_id, from_account_id, currency)
     if balance < amount:
         return None, "insufficient_funds"
     
     conn = get_connection(user_id)
     cursor = conn.execute(
-        "INSERT INTO transfers (from_account_id, to_account_id, amount, from_currency, to_currency, converted_amount) VALUES (?, ?, ?, ?, ?, ?)",
-        (from_account_id, to_account_id, amount, from_currency, to_currency, converted_amount)
+        "INSERT INTO transfers (from_account_id, to_account_id, amount, currency) VALUES (?, ?, ?, ?)",
+        (from_account_id, to_account_id, amount, currency)
     )
     conn.commit()
     transfer_id = cursor.lastrowid
     conn.close()
     
-    # Обновляем балансы
-    update_account_balance(user_id, from_account_id, from_currency, amount, 'subtract')
-    update_account_balance(user_id, to_account_id, to_currency, converted_amount, 'add')
+    update_account_balance(user_id, from_account_id, currency, amount, 'subtract')
+    update_account_balance(user_id, to_account_id, currency, amount, 'add')
     
     return transfer_id, "success"
 
@@ -489,23 +446,30 @@ def delete_transfer(user_id: int, id: int):
     conn = get_connection(user_id)
     t = conn.execute("SELECT * FROM transfers WHERE id=?", (id,)).fetchone()
     if t:
-        update_account_balance(user_id, t['from_account_id'], t['from_currency'], t['amount'], 'add')
-        update_account_balance(user_id, t['to_account_id'], t['to_currency'], t['converted_amount'], 'subtract')
+        update_account_balance(user_id, t['from_account_id'], t['currency'], t['amount'], 'add')
+        update_account_balance(user_id, t['to_account_id'], t['currency'], t['amount'], 'subtract')
         conn.execute("DELETE FROM transfers WHERE id=?", (id,))
         conn.commit()
     conn.close()
 
-# --- Цели ---
+# ============ Цели ============
+
 def get_goals(user_id: int):
     conn = get_connection(user_id)
     goals = conn.execute("SELECT * FROM goals ORDER BY created_at DESC").fetchall()
     conn.close()
     return [dict(g) for g in goals]
 
+def get_goal(user_id: int, id: int):
+    conn = get_connection(user_id)
+    goal = conn.execute("SELECT * FROM goals WHERE id=?", (id,)).fetchone()
+    conn.close()
+    return dict(goal) if goal else None
+
 def add_goal(user_id: int, name: str, target_amount: float, icon: str = '🎯'):
     conn = get_connection(user_id)
     cursor = conn.execute(
-        "INSERT INTO goals (name, target_amount, icon) VALUES (?, ?, ?)",
+        "INSERT INTO goals (name, target_amount, icon, current_amount) VALUES (?, ?, ?, 0)",
         (name, target_amount, icon)
     )
     conn.commit()
@@ -513,27 +477,23 @@ def add_goal(user_id: int, name: str, target_amount: float, icon: str = '🎯'):
     conn.close()
     return goal_id
 
-def update_goal(user_id: int, id: int, name: str = None, target_amount: float = None, current_amount: float = None, icon: str = None):
+def update_goal(user_id: int, id: int, name: str = None, target_amount: float = None, icon: str = None):
     conn = get_connection(user_id)
     goal = conn.execute("SELECT * FROM goals WHERE id=?", (id,)).fetchone()
     if goal:
-        name = name or goal['name']
-        target_amount = target_amount or goal['target_amount']
-        current_amount = current_amount if current_amount is not None else goal['current_amount']
-        icon = icon or goal['icon']
+        new_name = name if name else goal['name']
+        new_target = target_amount if target_amount else goal['target_amount']
+        new_icon = icon if icon else goal['icon']
         conn.execute(
-            "UPDATE goals SET name=?, target_amount=?, current_amount=?, icon=? WHERE id=?",
-            (name, target_amount, current_amount, icon, id)
+            "UPDATE goals SET name=?, target_amount=?, icon=? WHERE id=?",
+            (new_name, new_target, new_icon, id)
         )
         conn.commit()
     conn.close()
 
 def add_to_goal(user_id: int, id: int, amount: float):
     conn = get_connection(user_id)
-    conn.execute(
-        "UPDATE goals SET current_amount = current_amount + ? WHERE id = ?",
-        (amount, id)
-    )
+    conn.execute("UPDATE goals SET current_amount = current_amount + ? WHERE id = ?", (amount, id))
     conn.commit()
     conn.close()
 
@@ -543,11 +503,11 @@ def delete_goal(user_id: int, id: int):
     conn.commit()
     conn.close()
 
-# --- Аналитика ---
+# ============ Аналитика ============
+
 def get_monthly_stats(user_id: int, month: str):
     conn = get_connection(user_id)
     
-    # Расходы по категориям
     expenses_by_category = conn.execute('''
         SELECT c.id, c.name, c.icon, c.color, c.monthly_limit, SUM(t.amount) as total
         FROM transactions t
@@ -557,7 +517,6 @@ def get_monthly_stats(user_id: int, month: str):
         ORDER BY total DESC
     ''', (month,)).fetchall()
     
-    # Общие суммы (конвертируем в BYN)
     totals = conn.execute('''
         SELECT type, SUM(amount) as total
         FROM transactions
@@ -565,7 +524,6 @@ def get_monthly_stats(user_id: int, month: str):
         GROUP BY type
     ''', (month,)).fetchall()
     
-    # Расходы по дням
     daily_expenses = conn.execute('''
         SELECT strftime('%d', date) as day, SUM(amount) as total
         FROM transactions
@@ -585,9 +543,7 @@ def get_monthly_stats(user_id: int, month: str):
         'daily_expenses': [dict(d) for d in daily_expenses]
     }
 
-# --- Проверка лимитов ---
 def check_limits(user_id: int, month: str):
-    """Проверяет лимиты и возвращает категории с превышением"""
     conn = get_connection(user_id)
     
     results = conn.execute('''
@@ -609,7 +565,6 @@ def check_limits(user_id: int, month: str):
         if r['monthly_limit'] and r['monthly_limit'] > 0:
             percent = (r['spent'] / r['monthly_limit']) * 100
             
-            # 80% предупреждение
             if percent >= 80 and percent < 100 and not r['notified_80']:
                 notifications.append({
                     'category_id': r['id'],
@@ -619,13 +574,11 @@ def check_limits(user_id: int, month: str):
                     'limit': r['monthly_limit'],
                     'percent': 80
                 })
-                # Отмечаем что уведомили
                 conn.execute('''
                     INSERT OR REPLACE INTO limit_notifications (category_id, month, notified_80, notified_100)
-                    VALUES (?, ?, 1, COALESCE((SELECT notified_100 FROM limit_notifications WHERE category_id=? AND month=?), 0))
-                ''', (r['id'], month, r['id'], month))
+                    VALUES (?, ?, 1, 0)
+                ''', (r['id'], month))
             
-            # 100% превышение
             if percent >= 100 and not r['notified_100']:
                 notifications.append({
                     'category_id': r['id'],
@@ -644,13 +597,11 @@ def check_limits(user_id: int, month: str):
     conn.close()
     return notifications
 
-# --- Экспорт ---
 def get_all_transactions_for_export(user_id: int, month: str = None):
     conn = get_connection(user_id)
     query = '''
         SELECT t.date, t.type, t.amount, t.currency, t.description,
-               c.name as category_name,
-               a.name as account_name
+               c.name as category_name, a.name as account_name
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
         LEFT JOIN accounts a ON t.account_id = a.id
