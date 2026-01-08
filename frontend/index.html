@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Finance Tracker</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -10,14 +13,12 @@
 </head>
 <body>
     <div class="app">
-        <!-- Header -->
         <header class="header">
             <h1>Finance</h1>
             <div class="header-balance" id="totalBalance">0.00 BYN</div>
             <div class="header-balance-usd" id="totalBalanceUsd">≈ $0.00</div>
         </header>
 
-        <!-- Navigation -->
         <nav class="nav">
             <button class="nav-btn active" data-page="home">
                 <span class="nav-icon">🏠</span>
@@ -41,93 +42,75 @@
             </button>
         </nav>
 
-        <!-- Pages Container -->
         <main class="pages">
-            <!-- Home Page -->
+            <!-- Home -->
             <section class="page active" id="page-home">
-                <!-- Accounts Cards -->
                 <div class="section">
-                    <div class="section-header">
-                        <h2>Счета</h2>
-                    </div>
+                    <div class="section-header"><h2>Счета</h2></div>
                     <div class="accounts-scroll" id="accountsList"></div>
                 </div>
-
-                <!-- Recent Transactions -->
                 <div class="section">
-                    <div class="section-header">
-                        <h2>Последние операции</h2>
-                    </div>
+                    <div class="section-header"><h2>Последние операции</h2></div>
                     <div class="transactions-list" id="transactionsList"></div>
                 </div>
             </section>
 
-            <!-- Add Transaction Page -->
+            <!-- Add -->
             <section class="page" id="page-add">
                 <div class="segment-control">
                     <button class="segment active" data-type="expense">Расход</button>
                     <button class="segment" data-type="income">Доход</button>
                 </div>
-
                 <div class="form-card">
                     <input type="hidden" id="editTransactionId" value="">
-                    
                     <div class="input-group">
                         <label>Сумма</label>
                         <div class="amount-input-row">
                             <input type="number" id="amount" placeholder="0.00" inputmode="decimal">
-                            <div class="currency-selector" id="currencySelector">
-                                <button class="currency-btn selected" data-currency="BYN">BYN</button>
-                                <button class="currency-btn" data-currency="USD">USD</button>
-                                <button class="currency-btn" data-currency="EUR">EUR</button>
+                            <div class="currency-selector">
+                                <button type="button" class="currency-btn selected" data-currency="BYN">BYN</button>
+                                <button type="button" class="currency-btn" data-currency="USD">USD</button>
+                                <button type="button" class="currency-btn" data-currency="EUR">EUR</button>
                             </div>
                         </div>
                     </div>
-
                     <div class="input-group">
                         <label>Категория</label>
                         <div class="categories-grid" id="categoriesGrid"></div>
                     </div>
-
                     <div class="input-group">
                         <label>Счёт</label>
                         <div class="accounts-grid" id="accountsGrid"></div>
                     </div>
-
                     <div class="input-group">
                         <label>Описание</label>
                         <input type="text" id="description" placeholder="Опционально">
                     </div>
-
                     <div class="input-group">
                         <label>Дата</label>
                         <input type="date" id="transactionDate">
                     </div>
-
-                    <button class="btn-primary" id="saveTransaction">Сохранить</button>
-                    <button class="btn-secondary btn-cancel" id="cancelEdit" style="display: none;">Отменить редактирование</button>
+                    <button type="button" class="btn-primary" id="saveTransaction">Сохранить</button>
+                    <button type="button" class="btn-secondary btn-cancel" id="cancelEdit" style="display:none;">Отмена</button>
                 </div>
             </section>
 
-            <!-- Goals Page -->
+            <!-- Goals -->
             <section class="page" id="page-goals">
                 <div class="section">
-                    <div class="section-header">
-                        <h2>Мои цели</h2>
-                    </div>
+                    <div class="section-header"><h2>Мои цели</h2></div>
                     <div class="goals-list" id="goalsList"></div>
-                    <button class="btn-secondary" id="addGoal">+ Новая цель</button>
+                    <button type="button" class="btn-secondary" id="addGoal">+ Новая цель</button>
                 </div>
             </section>
 
-            <!-- Stats Page -->
+            <!-- Stats -->
             <section class="page" id="page-stats">
                 <div class="month-selector">
                     <button class="month-nav" id="prevMonth">‹</button>
-                    <span id="currentMonth">Декабрь 2024</span>
+                    <span id="currentMonth">Январь 2025</span>
                     <button class="month-nav" id="nextMonth">›</button>
                 </div>
-
                 <div class="stats-cards">
                     <div class="stat-card income">
                         <span class="stat-label">Доходы</span>
@@ -138,58 +121,42 @@
                         <span class="stat-value" id="totalExpense">0 BYN</span>
                     </div>
                 </div>
-
                 <div class="chart-container">
                     <h3>Расходы по категориям</h3>
                     <canvas id="categoryChart"></canvas>
                 </div>
-
                 <div class="chart-container">
                     <h3>По дням</h3>
                     <canvas id="dailyChart"></canvas>
                 </div>
-
                 <div class="section">
                     <h3>Лимиты</h3>
                     <div class="limits-list" id="limitsList"></div>
                 </div>
-
-                <button class="btn-secondary" id="exportData">📊 Экспорт в Excel</button>
+                <button type="button" class="btn-secondary" id="exportData">📊 Экспорт в Excel</button>
             </section>
 
-            <!-- Settings Page -->
+            <!-- Settings -->
             <section class="page" id="page-settings">
-                <!-- Transfer -->
                 <div class="settings-section">
-                    <h2>Перевод между счетами</h2>
-                    <button class="btn-secondary" id="openTransfer">🔄 Сделать перевод</button>
+                    <h2>Перевод</h2>
+                    <button type="button" class="btn-secondary" id="openTransfer">🔄 Перевод между счетами</button>
                 </div>
-
-                <!-- Categories Management -->
                 <div class="settings-section">
-                    <h2>Категории</h2>
-                    
-                    <div class="subsection">
-                        <h3>Расходы</h3>
-                        <div class="settings-list" id="expenseCategoriesList"></div>
-                        <button class="btn-secondary" id="addExpenseCategory">+ Добавить категорию</button>
-                    </div>
-
-                    <div class="subsection">
-                        <h3>Доходы</h3>
-                        <div class="settings-list" id="incomeCategoriesList"></div>
-                        <button class="btn-secondary" id="addIncomeCategory">+ Добавить категорию</button>
-                    </div>
+                    <h2>Категории расходов</h2>
+                    <div class="settings-list" id="expenseCategoriesList"></div>
+                    <button type="button" class="btn-secondary" id="addExpenseCategory">+ Добавить</button>
                 </div>
-
-                <!-- Accounts Management -->
+                <div class="settings-section">
+                    <h2>Категории доходов</h2>
+                    <div class="settings-list" id="incomeCategoriesList"></div>
+                    <button type="button" class="btn-secondary" id="addIncomeCategory">+ Добавить</button>
+                </div>
                 <div class="settings-section">
                     <h2>Счета</h2>
                     <div class="settings-list" id="settingsAccountsList"></div>
-                    <button class="btn-secondary" id="addAccount">+ Добавить счёт</button>
+                    <button type="button" class="btn-secondary" id="addAccount">+ Добавить счёт</button>
                 </div>
-
-                <!-- Exchange Rates -->
                 <div class="settings-section">
                     <h2>Курсы валют</h2>
                     <div class="rates-list" id="ratesList"></div>
@@ -198,27 +165,24 @@
         </main>
     </div>
 
-    <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- Confirm Dialog -->
     <div class="confirm-overlay" id="confirmOverlay">
         <div class="confirm-dialog">
             <div class="confirm-title" id="confirmTitle">Подтверждение</div>
             <div class="confirm-message" id="confirmMessage">Вы уверены?</div>
             <div class="confirm-buttons">
-                <button class="confirm-btn cancel" id="confirmCancel">Отмена</button>
-                <button class="confirm-btn danger" id="confirmOk">Удалить</button>
+                <button type="button" class="confirm-btn cancel" id="confirmCancel">Отмена</button>
+                <button type="button" class="confirm-btn danger" id="confirmOk">Удалить</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal" id="modal">
             <div class="modal-header">
                 <h3 id="modalTitle">Заголовок</h3>
-                <button class="modal-close" id="modalClose">✕</button>
+                <button type="button" class="modal-close" id="modalClose">✕</button>
             </div>
             <div class="modal-content" id="modalContent"></div>
         </div>
