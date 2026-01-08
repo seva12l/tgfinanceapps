@@ -1,7 +1,9 @@
 // ============ State ============
 const state = {
+    userId: null,
     currentPage: 'home',
     transactionType: 'expense',
+    selectedCurrency: 'BYN',
     selectedCategory: null,
     selectedAccount: null,
     selectedFromAccount: null,
@@ -12,47 +14,96 @@ const state = {
     categories: [],
     transactions: [],
     transfers: [],
+    goals: [],
     rates: {}
 };
 
+// ============ Telegram WebApp Init ============
+function initTelegram() {
+    if (window.Telegram?.WebApp) {
+        const tg = Telegram.WebApp;
+        
+        // Expand to full screen
+        tg.expand();
+        tg.ready();
+        
+        // Enable closing confirmation
+        tg.enableClosingConfirmation();
+        
+        // Get user ID
+        if (tg.initDataUnsafe?.user?.id) {
+            state.userId = tg.initDataUnsafe.user.id;
+        }
+        
+        // Apply Telegram theme
+        document.documentElement.style.setProperty('--tg-theme-bg-color', tg.backgroundColor || '#F2F2F7');
+        
+        // Set header color
+        tg.setHeaderColor('#FFFFFF');
+        tg.setBackgroundColor('#F2F2F7');
+    }
+    
+    // Fallback: get user_id from URL
+    if (!state.userId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        state.userId = urlParams.get('user_id') || 1;
+    }
+}
+
 // ============ API ============
 const api = {
+    getHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'X-User-Id': String(state.userId)
+        };
+    },
+    
     async get(url) {
-        const res = await fetch(url);
+        const separator = url.includes('?') ? '&' : '?';
+        const res = await fetch(`${url}${separator}user_id=${state.userId}`, {
+            headers: this.getHeaders()
+        });
         if (!res.ok) {
-            const error = await res.json();
+            const error = await res.json().catch(() => ({ detail: 'Ошибка сервера' }));
             throw new Error(error.detail || 'Ошибка сервера');
         }
         return res.json();
     },
+    
     async post(url, data) {
-        const res = await fetch(url, {
+        const res = await fetch(`${url}?user_id=${state.userId}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: this.getHeaders(),
             body: JSON.stringify(data)
         });
         if (!res.ok) {
-            const error = await res.json();
+            const error = await res.json().catch(() => ({ detail: 'Ошибка сервера' }));
             throw new Error(error.detail || 'Ошибка сервера');
         }
         return res.json();
     },
+    
     async put(url, data) {
-        const res = await fetch(url, {
+        const res = await fetch(`${url}?user_id=${state.userId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: this.getHeaders(),
             body: JSON.stringify(data)
         });
         if (!res.ok) {
-            const error = await res.json();
+            const error = await res.json().catch(() => ({ detail: 'Ошибка сервера' }));
             throw new Error(error.detail || 'Ошибка сервера');
         }
         return res.json();
     },
+    
     async delete(url) {
-        const res = await fetch(url, { method: 'DELETE' });
+        const res = await fetch(`${url}?user_id=${state.userId}`, {
+            method: 'DELETE',
+            headers: this.getHeaders()
+        });
         if (!res.ok) {
-            const error = await res.json();
+            const error = await res.json().catch(() => ({ detail: 'Ошибка сервера' }));
             throw new Error(error.detail || 'Ошибка сервера');
         }
         return res.json();
@@ -79,14 +130,39 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 3000);
 }
 
+// ============ Confirm Dialog ============
+function showConfirm(title, message) {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('confirmOverlay');
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        overlay.classList.add('active');
+        
+        const handleOk = () => {
+            overlay.classList.remove('active');
+            cleanup();
+            resolve(true);
+        };
+        
+        const handleCancel = () => {
+            overlay.classList.remove('active');
+            cleanup();
+            resolve(false);
+        };
+        
+        const cleanup = () => {
+            document.getElementById('confirmOk').removeEventListener('click', handleOk);
+            document.getElementById('confirmCancel').removeEventListener('click', handleCancel);
+        };
+        
+        document.getElementById('confirmOk').addEventListener('click', handleOk);
+        document.getElementById('confirmCancel').addEventListener('click', handleCancel);
+    });
+}
+
 // ============ Init ============
 document.addEventListener('DOMContentLoaded', async () => {
-    // Telegram WebApp
-    if (window.Telegram?.WebApp) {
-        Telegram.WebApp.expand();
-        Telegram.WebApp.ready();
-    }
-    
+    initTelegram();
     await loadData();
     setupEventListeners();
     renderAll();
@@ -97,12 +173,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadData() {
     try {
-        [state.accounts, state.categories, state.transactions, state.rates] = await Promise.all([
+        const [accounts, categories, transactions, rates, goals] = await Promise.all([
             api.get('/api/accounts'),
             api.get('/api/categories'),
-            api.get('/api/transactions?limit=20'),
-            api.get('/api/exchange-rates')
+            api.get('/api/transactions?limit=30'),
+            api.get('/api/exchange-rates'),
+            api.get('/api/goals')
         ]);
+        
+        state.accounts = accounts;
+        state.categories = categories;
+        state.transactions = transactions;
+        state.rates = rates;
+        state.goals = goals;
     } catch (e) {
         console.error('Error loading data:', e);
         showToast('Ошибка загрузки данных', 'error');
@@ -135,17 +218,20 @@ function setupEventListeners() {
         });
     });
     
+    // Currency selector
+    document.querySelectorAll('.currency-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.currency-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            state.selectedCurrency = btn.dataset.currency;
+        });
+    });
+    
     // Save transaction
     document.getElementById('saveTransaction').addEventListener('click', saveTransaction);
     
     // Cancel edit
     document.getElementById('cancelEdit').addEventListener('click', cancelEdit);
-    
-    // Save transfer
-    document.getElementById('saveTransfer').addEventListener('click', saveTransfer);
-    
-    // Transfer amount change
-    document.getElementById('transferAmount').addEventListener('input', updateConvertedAmount);
     
     // Month navigation
     document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
@@ -154,10 +240,14 @@ function setupEventListeners() {
     // Export
     document.getElementById('exportData').addEventListener('click', exportToExcel);
     
+    // Goals
+    document.getElementById('addGoal').addEventListener('click', showGoalModal);
+    
     // Settings buttons
     document.getElementById('addExpenseCategory').addEventListener('click', () => showCategoryModal('expense'));
     document.getElementById('addIncomeCategory').addEventListener('click', () => showCategoryModal('income'));
     document.getElementById('addAccount').addEventListener('click', showAccountModal);
+    document.getElementById('openTransfer').addEventListener('click', showTransferModal);
     
     // Modal
     document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -177,15 +267,13 @@ function navigateTo(page) {
         p.classList.toggle('active', p.id === `page-${page}`);
     });
     
+    // Scroll to top
+    document.querySelector('.pages').scrollTop = 0;
+    
     if (page === 'stats') loadStats();
     if (page === 'settings') renderSettings();
-    if (page === 'transfer') {
-        loadTransfers().then(() => renderTransfers());
-        renderTransferAccounts();
-    }
-    if (page === 'add') {
-        resetTransactionForm();
-    }
+    if (page === 'goals') renderGoals();
+    if (page === 'add') resetTransactionForm();
 }
 
 // ============ Render Functions ============
@@ -205,14 +293,32 @@ function renderAccounts() {
         return;
     }
     
-    container.innerHTML = state.accounts.map((acc, i) => `
-        <div class="account-card ${i === 1 ? 'secondary' : ''} ${acc.currency === 'USDT' ? 'crypto' : ''}">
-            <div class="account-icon">${acc.icon}</div>
-            <div class="account-name">${acc.name}</div>
-            <div class="account-balance">${formatMoney(acc.balance)}</div>
-            <div class="account-currency">${acc.currency}</div>
-        </div>
-    `).join('');
+    container.innerHTML = state.accounts.map((acc, i) => {
+        const balances = acc.balances || {};
+        const balanceLines = Object.entries(balances)
+            .filter(([_, val]) => val !== 0)
+            .map(([cur, val]) => `${formatMoney(val)} ${cur}`)
+            .join(' • ') || '0.00 BYN';
+        
+        // Calculate total in BYN
+        let totalByn = 0;
+        Object.entries(balances).forEach(([cur, val]) => {
+            const rate = state.rates[cur] || 1;
+            totalByn += val * rate;
+        });
+        
+        const cardClass = i === 1 ? 'secondary' : (Object.keys(balances).includes('USDT') ? 'crypto' : '');
+        
+        return `
+            <div class="account-card ${cardClass}">
+                <div class="account-icon">${acc.icon}</div>
+                <div class="account-name">${acc.name}</div>
+                <div class="account-balances">${balanceLines}</div>
+                ${Object.keys(balances).length > 1 || !balances['BYN'] ? 
+                    `<div class="account-total">≈ ${formatMoney(totalByn)} BYN</div>` : ''}
+            </div>
+        `;
+    }).join('');
 }
 
 function renderTransactions() {
@@ -229,19 +335,74 @@ function renderTransactions() {
     }
     
     container.innerHTML = state.transactions.map(t => `
-        <div class="transaction-item" data-id="${t.id}" onclick="editTransaction(${t.id})">
-            <div class="transaction-icon" style="background: ${t.category_color}20;">
-                ${t.category_icon}
+        <div class="transaction-wrapper" data-id="${t.id}">
+            <div class="transaction-item" data-id="${t.id}">
+                <div class="transaction-icon" style="background: ${t.category_color}20;">
+                    ${t.category_icon}
+                </div>
+                <div class="transaction-info">
+                    <div class="transaction-category">${t.category_name}</div>
+                    <div class="transaction-details">${t.account_name} • ${formatDate(t.date)}</div>
+                </div>
+                <div class="transaction-amount ${t.type}">
+                    ${t.type === 'expense' ? '-' : '+'}${formatMoney(t.amount)} ${t.currency}
+                </div>
             </div>
-            <div class="transaction-info">
-                <div class="transaction-category">${t.category_name}</div>
-                <div class="transaction-details">${t.account_name} • ${formatDate(t.date)}</div>
-            </div>
-            <div class="transaction-amount ${t.type}">
-                ${t.type === 'expense' ? '-' : '+'}${formatMoney(t.amount)} ${t.account_currency}
-            </div>
+            <button class="transaction-delete-btn" onclick="deleteTransaction(${t.id})">🗑</button>
         </div>
     `).join('');
+    
+    // Setup swipe handlers
+    setupSwipeHandlers();
+}
+
+function setupSwipeHandlers() {
+    document.querySelectorAll('.transaction-wrapper').forEach(wrapper => {
+        let startX = 0;
+        let currentX = 0;
+        let isSwiping = false;
+        
+        const item = wrapper.querySelector('.transaction-item');
+        
+        item.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+            isSwiping = true;
+            item.style.transition = 'none';
+        });
+        
+        item.addEventListener('touchmove', (e) => {
+            if (!isSwiping) return;
+            currentX = e.touches[0].clientX;
+            const diff = startX - currentX;
+            
+            if (diff > 0 && diff < 100) {
+                item.style.transform = `translateX(-${diff}px)`;
+            }
+        });
+        
+        item.addEventListener('touchend', () => {
+            isSwiping = false;
+            item.style.transition = 'transform 0.3s ease';
+            
+            const diff = startX - currentX;
+            if (diff > 60) {
+                item.classList.add('swiped');
+            } else {
+                item.style.transform = 'translateX(0)';
+                item.classList.remove('swiped');
+            }
+        });
+        
+        // Click to edit (if not swiped)
+        item.addEventListener('click', () => {
+            if (!item.classList.contains('swiped')) {
+                editTransaction(parseInt(wrapper.dataset.id));
+            } else {
+                item.style.transform = 'translateX(0)';
+                item.classList.remove('swiped');
+            }
+        });
+    });
 }
 
 function renderCategories() {
@@ -269,87 +430,44 @@ function renderAccountsGrid() {
     `).join('');
 }
 
-function renderTransferAccounts() {
-    const fromContainer = document.getElementById('fromAccountGrid');
-    const toContainer = document.getElementById('toAccountGrid');
-    
-    fromContainer.innerHTML = state.accounts.map(a => `
-        <button class="account-btn ${state.selectedFromAccount === a.id ? 'selected' : ''}" 
-                data-id="${a.id}" onclick="selectFromAccount(${a.id})">
-            <span class="icon">${a.icon}</span>
-            <span class="name">${a.name}</span>
-        </button>
-    `).join('');
-    
-    toContainer.innerHTML = state.accounts.map(a => `
-        <button class="account-btn ${state.selectedToAccount === a.id ? 'selected' : ''}" 
-                data-id="${a.id}" onclick="selectToAccount(${a.id})">
-            <span class="icon">${a.icon}</span>
-            <span class="name">${a.name}</span>
-        </button>
-    `).join('');
-}
-
-function renderTransfers() {
-    const container = document.getElementById('transfersList');
-    
-    if (state.transfers.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state-small">
-                <div class="icon">🔄</div>
-                <p>Нет переводов</p>
-            </div>
-        `;
-        return;
-    }
-    
-    container.innerHTML = state.transfers.map(t => `
-        <div class="transfer-item">
-            <div class="transfer-icon">🔄</div>
-            <div class="transfer-info">
-                <div class="transfer-accounts">${t.from_account_name} → ${t.to_account_name}</div>
-                <div class="transfer-date">${formatDate(t.date)}</div>
-            </div>
-            <div class="transfer-amount">
-                -${formatMoney(t.amount)} ${t.from_currency}
-                <div class="transfer-converted">+${formatMoney(t.converted_amount)} ${t.to_currency}</div>
-            </div>
-        </div>
-    `).join('');
-}
-
 function updateTotalBalance() {
-    let total = 0;
+    let totalByn = 0;
+    
     state.accounts.forEach(acc => {
-        const rate = state.rates[acc.currency] || 1;
-        total += acc.balance * rate;
+        const balances = acc.balances || {};
+        Object.entries(balances).forEach(([cur, val]) => {
+            const rate = state.rates[cur] || 1;
+            totalByn += val * rate;
+        });
     });
-    document.getElementById('totalBalance').textContent = `${formatMoney(total)} BYN`;
+    
+    const usdRate = state.rates['USD'] || 3.25;
+    const totalUsd = totalByn / usdRate;
+    
+    document.getElementById('totalBalance').textContent = `${formatMoney(totalByn)} BYN`;
+    document.getElementById('totalBalanceUsd').textContent = `≈ $${formatMoney(totalUsd)}`;
 }
 
 // ============ Selection ============
 function selectCategory(id) {
     state.selectedCategory = id;
     renderCategories();
+    
+    // Haptic
+    if (window.Telegram?.WebApp?.HapticFeedback) {
+        Telegram.WebApp.HapticFeedback.selectionChanged();
+    }
 }
 
 function selectAccount(id) {
     state.selectedAccount = id;
     renderAccountsGrid();
+    
+    // Haptic
+    if (window.Telegram?.WebApp?.HapticFeedback) {
+        Telegram.WebApp.HapticFeedback.selectionChanged();
+    }
 }
-
-function selectFromAccount(id) {
-    state.selectedFromAccount = id;
-    renderTransferAccounts();
-    updateConvertedAmount();
-}
-
-function selectToAccount(id) {
-    state.selectedToAccount = id;
-    renderTransferAccounts();
-    updateConvertedAmount();
-}
-
 // ============ Transaction ============
 function resetTransactionForm() {
     document.getElementById('amount').value = '';
@@ -358,9 +476,16 @@ function resetTransactionForm() {
     document.getElementById('editTransactionId').value = '';
     document.getElementById('cancelEdit').style.display = 'none';
     document.getElementById('saveTransaction').textContent = 'Сохранить';
+    
+    // Reset currency
+    document.querySelectorAll('.currency-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelector('.currency-btn[data-currency="BYN"]').classList.add('selected');
+    state.selectedCurrency = 'BYN';
+    
     state.selectedCategory = null;
     state.selectedAccount = null;
     state.editingTransactionId = null;
+    
     renderCategories();
     renderAccountsGrid();
 }
@@ -385,6 +510,12 @@ async function editTransaction(id) {
         document.getElementById('description').value = transaction.description || '';
         document.getElementById('transactionDate').value = transaction.date.split('T')[0];
         document.getElementById('editTransactionId').value = id;
+        
+        // Set currency
+        document.querySelectorAll('.currency-btn').forEach(b => {
+            b.classList.toggle('selected', b.dataset.currency === transaction.currency);
+        });
+        state.selectedCurrency = transaction.currency;
         
         // Select category and account
         state.selectedCategory = transaction.category_id;
@@ -424,6 +555,7 @@ async function saveTransaction() {
     
     const data = {
         amount,
+        currency: state.selectedCurrency,
         type: state.transactionType,
         category_id: state.selectedCategory,
         account_id: state.selectedAccount,
@@ -432,12 +564,26 @@ async function saveTransaction() {
     };
     
     try {
+        let response;
         if (editId) {
-            await api.put(`/api/transactions/${editId}`, data);
+            response = await api.put(`/api/transactions/${editId}`, data);
             showToast('Транзакция обновлена', 'success');
         } else {
-            await api.post('/api/transactions', data);
+            response = await api.post('/api/transactions', data);
             showToast('Транзакция добавлена', 'success');
+            
+            // Check for limit notifications
+            if (response.limit_notifications && response.limit_notifications.length > 0) {
+                response.limit_notifications.forEach(n => {
+                    const msg = n.percent >= 100 
+                        ? `🚨 Превышен лимит на "${n.category_name}"!`
+                        : `⚠️ 80% лимита на "${n.category_name}"`;
+                    showToast(msg, n.percent >= 100 ? 'error' : 'warning');
+                    
+                    // Send to Telegram bot
+                    sendLimitNotification(n);
+                });
+            }
         }
         
         resetTransactionForm();
@@ -449,72 +595,187 @@ async function saveTransaction() {
     }
 }
 
-// ============ Transfers ============
-function updateConvertedAmount() {
-    const amount = parseFloat(document.getElementById('transferAmount').value) || 0;
-    const fromAccount = state.accounts.find(a => a.id === state.selectedFromAccount);
-    const toAccount = state.accounts.find(a => a.id === state.selectedToAccount);
+async function deleteTransaction(id) {
+    const confirmed = await showConfirm('Удалить транзакцию?', 'Это действие нельзя отменить');
+    if (!confirmed) return;
     
-    if (fromAccount && toAccount && fromAccount.currency !== toAccount.currency) {
-        document.getElementById('convertedAmountGroup').style.display = 'block';
-        
-        const fromRate = state.rates[fromAccount.currency] || 1;
-        const toRate = state.rates[toAccount.currency] || 1;
-        const converted = (amount * fromRate) / toRate;
-        
-        document.getElementById('convertedAmount').value = converted.toFixed(2);
-        document.getElementById('conversionHint').textContent = 
-            `Курс: 1 ${fromAccount.currency} = ${(fromRate / toRate).toFixed(4)} ${toAccount.currency}`;
-    } else {
-        document.getElementById('convertedAmountGroup').style.display = 'none';
-        document.getElementById('convertedAmount').value = amount;
+    try {
+        await api.delete(`/api/transactions/${id}`);
+        showToast('Транзакция удалена', 'success');
+        await loadData();
+        renderAll();
+    } catch (e) {
+        showToast('Ошибка удаления', 'error');
     }
 }
 
-async function saveTransfer() {
-    const amount = parseFloat(document.getElementById('transferAmount').value);
-    const convertedAmount = parseFloat(document.getElementById('convertedAmount').value) || amount;
+function sendLimitNotification(notification) {
+    if (window.Telegram?.WebApp) {
+        Telegram.WebApp.sendData(JSON.stringify({
+            type: 'limit_notification',
+            ...notification
+        }));
+    }
+}
+
+// ============ Goals ============
+function renderGoals() {
+    const container = document.getElementById('goalsList');
+    
+    if (state.goals.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="icon">🎯</div>
+                <p>Поставь свою первую финансовую цель!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = state.goals.map(goal => {
+        const percent = Math.min((goal.current_amount / goal.target_amount) * 100, 100);
+        const remaining = goal.target_amount - goal.current_amount;
+        
+        return `
+            <div class="goal-card" data-id="${goal.id}">
+                <div class="goal-header">
+                    <div class="goal-info">
+                        <span class="goal-icon">${goal.icon}</span>
+                        <span class="goal-name">${goal.name}</span>
+                    </div>
+                    <div class="goal-actions">
+                        <button class="goal-action-btn" onclick="editGoal(${goal.id})">✏️</button>
+                        <button class="goal-action-btn" onclick="deleteGoal(${goal.id})">🗑</button>
+                    </div>
+                </div>
+                <div class="goal-progress">
+                    <div class="goal-progress-bar">
+                        <div class="goal-progress-fill" style="width: ${percent}%"></div>
+                    </div>
+                    <div class="goal-progress-text">
+                        <span class="current">${formatMoney(goal.current_amount)} BYN</span>
+                        <span>${formatMoney(goal.target_amount)} BYN</span>
+                    </div>
+                </div>
+                <div class="goal-add-money">
+                    <input type="number" id="goalAmount${goal.id}" placeholder="Сумма" inputmode="decimal">
+                    <button onclick="addMoneyToGoal(${goal.id})">+ Добавить</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function addMoneyToGoal(id) {
+    const input = document.getElementById(`goalAmount${id}`);
+    const amount = parseFloat(input.value);
     
     if (!amount || amount <= 0) {
         showToast('Введите сумму', 'error');
         return;
     }
-    if (!state.selectedFromAccount) {
-        showToast('Выберите счёт списания', 'error');
+    
+    try {
+        await api.post(`/api/goals/${id}/add`, { amount });
+        showToast('Добавлено!', 'success');
+        input.value = '';
+        
+        state.goals = await api.get('/api/goals');
+        renderGoals();
+    } catch (e) {
+        showToast('Ошибка', 'error');
+    }
+}
+
+function showGoalModal(editId = null) {
+    const goal = editId ? state.goals.find(g => g.id === editId) : null;
+    const icons = ['🎯', '🏠', '🚗', '✈️', '📱', '💻', '🎓', '💍', '🏖️', '💰'];
+    
+    showModal(goal ? 'Редактировать цель' : 'Новая цель', `
+        <div class="input-group">
+            <label>Название</label>
+            <input type="text" id="goalName" placeholder="На что копим?" value="${goal?.name || ''}">
+        </div>
+        <div class="input-group">
+            <label>Сумма цели (BYN)</label>
+            <input type="number" id="goalTarget" placeholder="0.00" value="${goal?.target_amount || ''}">
+        </div>
+        <div class="input-group">
+            <label>Иконка</label>
+            <div class="categories-grid">
+                ${icons.map((icon, i) => `
+                    <button class="category-btn ${(goal?.icon === icon || (!goal && i === 0)) ? 'selected' : ''}" 
+                            onclick="selectGoalIcon(this, '${icon}')">
+                        <span class="icon">${icon}</span>
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+        <button class="btn-primary" onclick="saveGoal(${editId || 'null'})">${goal ? 'Сохранить' : 'Создать'}</button>
+    `);
+    
+    window.selectedGoalIcon = goal?.icon || icons[0];
+}
+
+function selectGoalIcon(btn, icon) {
+    document.querySelectorAll('#modalContent .category-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window.selectedGoalIcon = icon;
+}
+
+async function saveGoal(editId = null) {
+    const name = document.getElementById('goalName').value;
+    const target = parseFloat(document.getElementById('goalTarget').value);
+    
+    if (!name) {
+        showToast('Введите название', 'error');
         return;
     }
-    if (!state.selectedToAccount) {
-        showToast('Выберите счёт зачисления', 'error');
-        return;
-    }
-    if (state.selectedFromAccount === state.selectedToAccount) {
-        showToast('Выберите разные счета', 'error');
+    if (!target || target <= 0) {
+        showToast('Введите сумму цели', 'error');
         return;
     }
     
     try {
-        await api.post('/api/transfers', {
-            from_account_id: state.selectedFromAccount,
-            to_account_id: state.selectedToAccount,
-            amount,
-            converted_amount: convertedAmount
-        });
+        if (editId) {
+            await api.put(`/api/goals/${editId}`, {
+                name,
+                target_amount: target,
+                icon: window.selectedGoalIcon
+            });
+            showToast('Цель обновлена', 'success');
+        } else {
+            await api.post('/api/goals', {
+                name,
+                target_amount: target,
+                icon: window.selectedGoalIcon
+            });
+            showToast('Цель создана!', 'success');
+        }
         
-        showToast('Перевод выполнен', 'success');
-        
-        // Reset form
-        document.getElementById('transferAmount').value = '';
-        document.getElementById('convertedAmount').value = '';
-        state.selectedFromAccount = null;
-        state.selectedToAccount = null;
-        
-        await loadData();
-        await loadTransfers();
-        renderAll();
-        renderTransferAccounts();
-        renderTransfers();
+        closeModal();
+        state.goals = await api.get('/api/goals');
+        renderGoals();
     } catch (e) {
-        showToast(e.message, 'error');
+        showToast('Ошибка', 'error');
+    }
+}
+
+async function editGoal(id) {
+    showGoalModal(id);
+}
+
+async function deleteGoal(id) {
+    const confirmed = await showConfirm('Удалить цель?', 'Прогресс будет потерян');
+    if (!confirmed) return;
+    
+    try {
+        await api.delete(`/api/goals/${id}`);
+        showToast('Цель удалена', 'success');
+        state.goals = await api.get('/api/goals');
+        renderGoals();
+    } catch (e) {
+        showToast('Ошибка удаления', 'error');
     }
 }
 
@@ -546,9 +807,10 @@ function renderCategoryChart(data) {
     if (categoryChart) categoryChart.destroy();
     
     if (data.length === 0) {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.canvas.style.display = 'none';
         return;
     }
+    ctx.canvas.style.display = 'block';
     
     categoryChart = new Chart(ctx, {
         type: 'doughnut',
@@ -566,12 +828,13 @@ function renderCategoryChart(data) {
                 legend: {
                     position: 'bottom',
                     labels: {
-                        font: { family: '-apple-system, BlinkMacSystemFont, sans-serif' },
-                        padding: 16
+                        font: { family: '-apple-system, sans-serif', size: 12 },
+                        padding: 12,
+                        usePointStyle: true
                     }
                 }
             },
-            cutout: '60%'
+            cutout: '65%'
         }
     });
 }
@@ -582,9 +845,10 @@ function renderDailyChart(data) {
     if (dailyChart) dailyChart.destroy();
     
     if (data.length === 0) {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.canvas.style.display = 'none';
         return;
     }
+    ctx.canvas.style.display = 'block';
     
     dailyChart = new Chart(ctx, {
         type: 'bar',
@@ -600,7 +864,7 @@ function renderDailyChart(data) {
             responsive: true,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true },
+                y: { beginAtZero: true, grid: { color: '#F2F2F7' } },
                 x: { grid: { display: false } }
             }
         }
@@ -639,10 +903,9 @@ function changeMonth(delta) {
     loadStats();
 }
 
-// ============ Export ============
 function exportToExcel() {
     const month = formatMonth(state.currentMonth);
-    window.open(`/api/export?month=${month}`, '_blank');
+    window.open(`/api/export?month=${month}&user_id=${state.userId}`, '_blank');
     showToast('Файл скачивается...', 'success');
 }
 
@@ -693,7 +956,8 @@ function renderSettingsList(items, type) {
 }
 
 async function deleteItem(type, id) {
-    if (!confirm('Удалить? Все связанные транзакции тоже будут удалены.')) return;
+    const confirmed = await showConfirm('Удалить?', 'Все связанные данные тоже будут удалены');
+    if (!confirmed) return;
     
     try {
         if (type === 'category') {
@@ -721,7 +985,7 @@ function closeModal() {
     document.getElementById('modalOverlay').classList.remove('active');
 }
 
-// Icons and colors
+// Category Modal
 const categoryIcons = ['🍔', '🚗', '🎮', '🛒', '💊', '📱', '🏠', '📚', '🎁', '💰', '📦', '✈️', '☕', '🎬', '👕', '💄', '🏋️', '🎵', '🍺', '🌐'];
 const categoryColors = ['#FF9500', '#FF3B30', '#AF52DE', '#007AFF', '#34C759', '#5856D6', '#FF2D55', '#00C7BE', '#8E8E93', '#FFD60A'];
 
@@ -739,8 +1003,8 @@ function showCategoryModal(type, editId = null) {
         <div class="input-group">
             <label>Иконка</label>
             <div class="categories-grid">
-                ${categoryIcons.map((icon, i) => `
-                    <button class="category-btn ${(category?.icon === icon || (!category && i === 0)) ? 'selected' : ''}" 
+                ${categoryIcons.map((icon) => `
+                    <button class="category-btn ${(category?.icon === icon || (!category && icon === categoryIcons[0])) ? 'selected' : ''}" 
                             onclick="selectModalIcon(this, '${icon}')">
                         <span class="icon">${icon}</span>
                     </button>
@@ -750,8 +1014,8 @@ function showCategoryModal(type, editId = null) {
         <div class="input-group">
             <label>Цвет</label>
             <div class="colors-grid">
-                ${categoryColors.map((color, i) => `
-                    <button class="color-btn ${(category?.color === color || (!category && i === 0)) ? 'selected' : ''}" 
+                ${categoryColors.map((color) => `
+                    <button class="color-btn ${(category?.color === color || (!category && color === categoryColors[0])) ? 'selected' : ''}" 
                             style="background: ${color};"
                             onclick="selectModalColor(this, '${color}')">
                     </button>
@@ -785,9 +1049,7 @@ function selectModalColor(btn, color) {
 
 async function editCategory(id) {
     const category = state.categories.find(c => c.id === id);
-    if (category) {
-        showCategoryModal(category.type, id);
-    }
+    if (category) showCategoryModal(category.type, id);
 }
 
 async function saveCategory(type, editId = null) {
@@ -825,10 +1087,10 @@ async function saveCategory(type, editId = null) {
     }
 }
 
+// Account Modal
 function showAccountModal(editId = null) {
     const account = editId ? state.accounts.find(a => a.id === editId) : null;
-    const icons = ['💳', '💵', '🪙', '🏦', '💎'];
-    const currencies = ['BYN', 'USD', 'EUR', 'USDT'];
+    const icons = ['💳', '💵', '🪙', '🏦', '💎', '🏧'];
     
     showModal(account ? 'Редактировать счёт' : 'Новый счёт', `
         <div class="input-group">
@@ -836,21 +1098,10 @@ function showAccountModal(editId = null) {
             <input type="text" id="newAccountName" placeholder="Название" value="${account?.name || ''}">
         </div>
         <div class="input-group">
-            <label>Валюта</label>
-            <div class="accounts-grid">
-                ${currencies.map((cur, i) => `
-                    <button class="account-btn ${(account?.currency === cur || (!account && i === 0)) ? 'selected' : ''}" 
-                            onclick="selectModalCurrency(this, '${cur}')">
-                        <span class="name">${cur}</span>
-                    </button>
-                `).join('')}
-            </div>
-        </div>
-        <div class="input-group">
             <label>Иконка</label>
             <div class="categories-grid">
-                ${icons.map((icon, i) => `
-                    <button class="category-btn ${(account?.icon === icon || (!account && i === 0)) ? 'selected' : ''}" 
+                ${icons.map((icon) => `
+                    <button class="category-btn ${(account?.icon === icon || (!account && icon === icons[0])) ? 'selected' : ''}" 
                             onclick="selectModalAccountIcon(this, '${icon}')">
                         <span class="icon">${icon}</span>
                     </button>
@@ -861,13 +1112,6 @@ function showAccountModal(editId = null) {
     `);
     
     window.selectedAccountIcon = account?.icon || icons[0];
-    window.selectedCurrency = account?.currency || currencies[0];
-}
-
-function selectModalCurrency(btn, currency) {
-    document.querySelectorAll('#modalContent .account-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-    window.selectedCurrency = currency;
 }
 
 function selectModalAccountIcon(btn, icon) {
@@ -889,11 +1133,7 @@ async function saveAccount(editId = null) {
     }
     
     try {
-        const data = {
-            name,
-            currency: window.selectedCurrency,
-            icon: window.selectedAccountIcon
-        };
+        const data = { name, icon: window.selectedAccountIcon };
         
         if (editId) {
             await api.put(`/api/accounts/${editId}`, data);
@@ -909,6 +1149,140 @@ async function saveAccount(editId = null) {
         renderAll();
     } catch (e) {
         showToast('Ошибка', 'error');
+    }
+}
+
+// Transfer Modal
+function showTransferModal() {
+    const currencies = ['BYN', 'USD', 'EUR', 'USDT'];
+    
+    showModal('Перевод между счетами', `
+        <div class="transfer-form">
+            <div class="input-group">
+                <label>Со счёта</label>
+                <div class="accounts-select" id="transferFromAccounts">
+                    ${state.accounts.map(a => `
+                        <button class="account-btn" data-id="${a.id}" onclick="selectTransferFrom(${a.id}, this)">
+                            <span class="icon">${a.icon}</span>
+                            <span class="name">${a.name}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <div class="transfer-arrow">↓</div>
+            
+            <div class="input-group">
+                <label>На счёт</label>
+                <div class="accounts-select" id="transferToAccounts">
+                    ${state.accounts.map(a => `
+                        <button class="account-btn" data-id="${a.id}" onclick="selectTransferTo(${a.id}, this)">
+                            <span class="icon">${a.icon}</span>
+                            <span class="name">${a.name}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <label>Сумма и валюта списания</label>
+                <div class="amount-input-row">
+                    <input type="number" id="transferAmount" placeholder="0.00" inputmode="decimal">
+                    <div class="currency-selector">
+                        ${currencies.map((c, i) => `
+                            <button class="currency-btn ${i === 0 ? 'selected' : ''}" data-currency="${c}" onclick="selectTransferFromCurrency(this, '${c}')">${c}</button>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="input-group">
+                <label>Сумма и валюта зачисления</label>
+                <div class="amount-input-row">
+                    <input type="number" id="transferConvertedAmount" placeholder="0.00" inputmode="decimal">
+                    <div class="currency-selector">
+                        ${currencies.map((c, i) => `
+                            <button class="currency-btn ${i === 0 ? 'selected' : ''}" data-currency="${c}" onclick="selectTransferToCurrency(this, '${c}')">${c}</button>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn-primary" onclick="saveTransfer()">Перевести</button>
+        </div>
+    `);
+    
+    window.transferFromAccount = null;
+    window.transferToAccount = null;
+    window.transferFromCurrency = 'BYN';
+    window.transferToCurrency = 'BYN';
+}
+
+function selectTransferFrom(id, btn) {
+    document.querySelectorAll('#transferFromAccounts .account-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window.transferFromAccount = id;
+}
+
+function selectTransferTo(id, btn) {
+    document.querySelectorAll('#transferToAccounts .account-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window.transferToAccount = id;
+}
+
+function selectTransferFromCurrency(btn, currency) {
+    btn.parentElement.querySelectorAll('.currency-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window.transferFromCurrency = currency;
+}
+
+function selectTransferToCurrency(btn, currency) {
+    btn.parentElement.querySelectorAll('.currency-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    window.transferToCurrency = currency;
+}
+
+async function saveTransfer() {
+    const amount = parseFloat(document.getElementById('transferAmount').value);
+    const convertedAmount = parseFloat(document.getElementById('transferConvertedAmount').value);
+    
+    if (!amount || amount <= 0) {
+        showToast('Введите сумму списания', 'error');
+        return;
+    }
+    if (!convertedAmount || convertedAmount <= 0) {
+        showToast('Введите сумму зачисления', 'error');
+        return;
+    }
+    if (!window.transferFromAccount) {
+        showToast('Выберите счёт списания', 'error');
+        return;
+    }
+    if (!window.transferToAccount) {
+        showToast('Выберите счёт зачисления', 'error');
+        return;
+    }
+    if (window.transferFromAccount === window.transferToAccount) {
+        showToast('Выберите разные счета', 'error');
+        return;
+    }
+    
+    try {
+        await api.post('/api/transfers', {
+            from_account_id: window.transferFromAccount,
+            to_account_id: window.transferToAccount,
+            amount,
+            from_currency: window.transferFromCurrency,
+            to_currency: window.transferToCurrency,
+            converted_amount: convertedAmount
+        });
+        
+        showToast('Перевод выполнен!', 'success');
+        closeModal();
+        await loadData();
+        renderAll();
+    } catch (e) {
+        showToast(e.message, 'error');
     }
 }
 
