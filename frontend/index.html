@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Finance Tracker</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -14,6 +14,7 @@
         <header class="header">
             <h1>Finance</h1>
             <div class="header-balance" id="totalBalance">0.00 BYN</div>
+            <div class="header-balance-usd" id="totalBalanceUsd">≈ $0.00</div>
         </header>
 
         <!-- Navigation -->
@@ -26,9 +27,9 @@
                 <span class="nav-icon">➕</span>
                 <span>Добавить</span>
             </button>
-            <button class="nav-btn" data-page="transfer">
-                <span class="nav-icon">🔄</span>
-                <span>Перевод</span>
+            <button class="nav-btn" data-page="goals">
+                <span class="nav-icon">🎯</span>
+                <span>Цели</span>
             </button>
             <button class="nav-btn" data-page="stats">
                 <span class="nav-icon">📊</span>
@@ -36,7 +37,7 @@
             </button>
             <button class="nav-btn" data-page="settings">
                 <span class="nav-icon">⚙️</span>
-                <span>Настройки</span>
+                <span>Ещё</span>
             </button>
         </nav>
 
@@ -73,7 +74,14 @@
                     
                     <div class="input-group">
                         <label>Сумма</label>
-                        <input type="number" id="amount" placeholder="0.00" inputmode="decimal">
+                        <div class="amount-input-row">
+                            <input type="number" id="amount" placeholder="0.00" inputmode="decimal">
+                            <div class="currency-selector" id="currencySelector">
+                                <button class="currency-btn selected" data-currency="BYN">BYN</button>
+                                <button class="currency-btn" data-currency="USD">USD</button>
+                                <button class="currency-btn" data-currency="EUR">EUR</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="input-group">
@@ -101,41 +109,14 @@
                 </div>
             </section>
 
-            <!-- Transfer Page -->
-            <section class="page" id="page-transfer">
-                <div class="form-card">
-                    <h2 class="form-title">Перевод между счетами</h2>
-                    
-                    <div class="input-group">
-                        <label>Со счёта</label>
-                        <div class="accounts-grid" id="fromAccountGrid"></div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label>На счёт</label>
-                        <div class="accounts-grid" id="toAccountGrid"></div>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Сумма списания</label>
-                        <input type="number" id="transferAmount" placeholder="0.00" inputmode="decimal">
-                    </div>
-                    
-                    <div class="input-group" id="convertedAmountGroup" style="display: none;">
-                        <label>Сумма зачисления</label>
-                        <input type="number" id="convertedAmount" placeholder="0.00" inputmode="decimal">
-                        <small class="hint" id="conversionHint"></small>
-                    </div>
-
-                    <button class="btn-primary" id="saveTransfer">Перевести</button>
-                </div>
-
-                <!-- Transfer History -->
-                <div class="section" style="margin-top: 20px;">
+            <!-- Goals Page -->
+            <section class="page" id="page-goals">
+                <div class="section">
                     <div class="section-header">
-                        <h2>История переводов</h2>
+                        <h2>Мои цели</h2>
                     </div>
-                    <div class="transactions-list" id="transfersList"></div>
+                    <div class="goals-list" id="goalsList"></div>
+                    <button class="btn-secondary" id="addGoal">+ Новая цель</button>
                 </div>
             </section>
 
@@ -178,6 +159,12 @@
 
             <!-- Settings Page -->
             <section class="page" id="page-settings">
+                <!-- Transfer -->
+                <div class="settings-section">
+                    <h2>Перевод между счетами</h2>
+                    <button class="btn-secondary" id="openTransfer">🔄 Сделать перевод</button>
+                </div>
+
                 <!-- Categories Management -->
                 <div class="settings-section">
                     <h2>Категории</h2>
@@ -213,6 +200,18 @@
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="confirm-overlay" id="confirmOverlay">
+        <div class="confirm-dialog">
+            <div class="confirm-title" id="confirmTitle">Подтверждение</div>
+            <div class="confirm-message" id="confirmMessage">Вы уверены?</div>
+            <div class="confirm-buttons">
+                <button class="confirm-btn cancel" id="confirmCancel">Отмена</button>
+                <button class="confirm-btn danger" id="confirmOk">Удалить</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal -->
     <div class="modal-overlay" id="modalOverlay">
